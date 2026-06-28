@@ -13,9 +13,16 @@
 #include <linux/bitfield.h>
 #include <linux/err.h>
 #include <power/pmic.h>
+#include <power/mt6331.h>
 #include <power/mt6357.h>
 #include <power/mt6359.h>
 #include <time.h>
+
+static const struct pmic_child_info mt6331_pmic_children_info[] = {
+	{ .prefix = "buck", .driver = MT6331_REGULATOR_DRIVER },
+	{ .prefix = "ldo", .driver = MT6331_REGULATOR_DRIVER },
+	{ }
+};
 
 static const struct pmic_child_info mt6357_pmic_children_info[] = {
 	{ .prefix = "buck", .driver = MT6357_REGULATOR_DRIVER },
@@ -129,6 +136,23 @@ enum dew_regs {
 	PWRAP_DEW_RG_WDATA_MASK,
 	PWRAP_DEW_RG_SPI_RECORD_CLR,
 	PWRAP_DEW_RG_CMD_ALERT_CLR,
+};
+
+static const u32 mt6331_regs[] = {
+	[PWRAP_DEW_DIO_EN] =		0x018c,
+	[PWRAP_DEW_READ_TEST] =		0x018e,
+	[PWRAP_DEW_WRITE_TEST] =	0x0190,
+	[PWRAP_DEW_CRC_SWRST] =		0x0192,
+	[PWRAP_DEW_CRC_EN] =		0x0194,
+	[PWRAP_DEW_CRC_VAL] =		0x0196,
+	[PWRAP_DEW_MON_GRP_SEL] =	0x0198,
+	[PWRAP_DEW_CIPHER_KEY_SEL] =	0x019a,
+	[PWRAP_DEW_CIPHER_IV_SEL] =	0x019c,
+	[PWRAP_DEW_CIPHER_EN] =		0x019e,
+	[PWRAP_DEW_CIPHER_RDY] =	0x01a0,
+	[PWRAP_DEW_CIPHER_MODE] =	0x01a2,
+	[PWRAP_DEW_CIPHER_SWRST] =	0x01a4,
+	[PWRAP_DEW_RDDMY_NO] =		0x01a6,
 };
 
 static const u32 mt6357_regs[] = {
@@ -789,6 +813,11 @@ static int pwrap_init(struct pmic_wrapper *wrp)
 	return 0;
 }
 
+static const struct pwrap_slv_type pmic_mt6331 = {
+	.dew_regs = mt6331_regs,
+	.caps = PWRAP_SLV_CAP_SPI | PWRAP_SLV_CAP_DUALIO,
+};
+
 static const struct pwrap_slv_type pmic_mt6357 = {
 	.dew_regs = mt6357_regs,
 	.caps = 0,
@@ -800,6 +829,7 @@ static const struct pwrap_slv_type pmic_mt6359 = {
 };
 
 static const struct udevice_id mtk_pmic_ids[] = {
+	{ .compatible = "mediatek,mt6331", .data = (ulong)&pmic_mt6331 },
 	{ .compatible = "mediatek,mt6357", .data = (ulong)&pmic_mt6357 },
 	{ .compatible = "mediatek,mt6359", .data = (ulong)&pmic_mt6359 },
 	{ }
@@ -881,6 +911,9 @@ static int mtk_pwrap_probe(struct udevice *dev)
 	if (ret)
 		return ret;
 
+	pwrap_writel(wrp, 1, PWRAP_DCM_EN);
+	pwrap_writel(wrp, 0, PWRAP_DCM_DBC_PRD);
+
 	/*
 	 * The PMIC could already be initialized by the bootloader.
 	 * Skip initialization here in this case.
@@ -938,7 +971,9 @@ static int mtk_pwrap_bind(struct udevice *dev)
 		return -ENXIO;
 	}
 
-	if (ofnode_device_is_compatible(pmic_node, "mediatek,mt6357")) {
+	if (ofnode_device_is_compatible(pmic_node, "mediatek,mt6331")) {
+		pmic_children_info = mt6331_pmic_children_info;
+	} else if (ofnode_device_is_compatible(pmic_node, "mediatek,mt6357")) {
 		pmic_children_info = mt6357_pmic_children_info;
 	} else if (ofnode_device_is_compatible(pmic_node, "mediatek,mt6359")) {
 		pmic_children_info = mt6359_pmic_children_info;
